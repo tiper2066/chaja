@@ -31,8 +31,8 @@
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
-| 0단계 | 개발 환경·프로젝트 뼈대·서명·아이콘 | ✅ 완료 (사용자 확인 대기) |
-| 1단계 | 핵심 검색 앱 (시안 기능 + Spotlight + 직접 스캔 + Quick Look) | ⬜ 미착수 |
+| 0단계 | 개발 환경·프로젝트 뼈대·서명·아이콘 | ✅ 완료 (사용자 확인, 커밋 `6695318`) |
+| 1단계 | 핵심 검색 앱 (시안 기능 + Spotlight + 직접 스캔 + Quick Look) | ✅ 완료 (사용자 확인) |
 | 2단계 | 편의 기능 (단축키, 검색 저장, 제외 폴더, 다운로드 출처, 태그) | ⬜ 미착수 |
 | 3단계 | 분석 기능 (중복 파일, 비슷한 이미지) | ⬜ 미착수 |
 | 4단계 | 배포 (Release 빌드, M5 맥 설치 검증) | ⬜ 미착수 |
@@ -60,6 +60,15 @@
 | 인덱스 전체 (`kMDItemFSSize >= 0`) | 약 1,859,962 | **82초** |
 
 → **결론:** 좁은 조건은 1초 이내. 결과가 수십만 개인 넓은 검색은 느리므로 **결과를 스트리밍 표시 + 표시 개수 상한**이 필수.
+
+### 2.2.1 구현 중 확인한 Spotlight 사실 (1단계)
+- 조건 없는 쿼리에 `kMDItemFSName == "*"`는 **0건**을 반환한다 → 전체는 `kMDItemContentTypeTree == "public.item"`
+- `.ts`(TypeScript) 파일을 Spotlight가 `public.mpeg-2-transport-stream`(동영상)으로 분류한다. 홈 폴더 "동영상" 19만 개 중 실제 동영상은 5,947개 → 동영상 쿼리에서 제외하고 코드에 `*.ts`, `*.tsx` 이름 조건 추가 (진짜 MPEG-TS 동영상도 빠지는 부작용은 감수)
+- `.docx`는 `public.composite-content`를 따른다 → 문서 종류의 기준
+- 본문 검색: `kMDItemTextContent == "정산*"cdw`(단어 시작) 0.06초 vs `"*정산*"cd`(부분 일치) 1.16초, 결과 수 동일 → `cdw` 사용
+- 이스케이프: 값 안의 `\`, `"`, `*`, `?` 앞에 `\`. 날짜는 `$time.iso(2026-10-01T00:00:00Z)`
+- `/tmp`(`/private/tmp`)는 색인되지 않는다. Spotlight 실험용 파일은 `build/probe/`처럼 색인되는 곳에 만들 것
+- **성능 핵심:** `NSMetadataItem.value(forAttribute:)`는 호출마다 Spotlight에 묻는다(1만 개 × 7속성 = 20.3초). `query.valueListAttributes`에 속성을 지정하고 `query.value(ofAttribute:forResultAt:)`로 읽으면 1.7초. 단 **`kMDItemPath`는 값 목록에 넣어도 nil**이라 경로만 항목에서 직접 읽는다
 
 ### 2.3 불가능하거나 변경한 기능
 - **"M5 가속 / M5 Neural Engine 분석"**: Spotlight 검색은 칩·Neural Engine과 무관 → 표현 제거.
@@ -131,8 +140,8 @@ Chaja/
 └── Chaja/
     ├── App/            ChajaApp.swift, AppDelegate.swift, AppState.swift
     ├── Models/         SearchCriteria, FileItem, FileKind, DateFilter, SizeFilter, SearchScope, SavedSearch
-    ├── Search/         SearchCoordinator, SpotlightSearchEngine, SpotlightQueryBuilder, FileSystemScanner, ResultFilter
-    ├── Services/       FileActions, ThumbnailService, PermissionService, HotKeyService, SavedSearchStore
+    ├── Search/         SearchModel(조율·파일 동작), SpotlightSearchEngine, SpotlightQueryBuilder, FileSystemScanner, FileMatcher
+    ├── Services/       PermissionService, IconProvider(+ThumbnailProvider) / 2단계: HotKeyService, SavedSearchStore
     ├── Analysis/       DuplicateFinder, SimilarImageFinder          # 3단계
     ├── Views/
     │   ├── ContentView.swift
@@ -201,34 +210,40 @@ Chaja/
 - [x] 0-8. (추가) Hardened Runtime을 켜면 Debug 빌드가 `Chaja.debug.dylib` 로드 실패("different Team IDs")로 즉시 종료됨 → `ENABLE_HARDENED_RUNTIME: NO`로 해결
 
 ### 1단계 — 핵심 검색 앱
-**모델**
-- [ ] 1-1. `FileItem` (url, 이름, 경로, 크기, 생성일, 수정일, UTType, 종류 표시명, 숨김 여부)
-- [ ] 1-2. `SearchCriteria` (검색어, 검색 모드, 확장자 그룹, 종류 집합, 크기 범위, 날짜 필터·기준, 옵션 3종, 위치)
-- [ ] 1-3. `FileKind`, `DateFilter`, `SizeFilter`, `SearchScope` 열거형 + 표시명/아이콘/색상
+**모델** (`Chaja/Models/`)
+- [x] 1-1. `FileItem` (url, 이름, 크기, 생성일, 수정일, 콘텐츠 유형, 종류 표시명, 폴더 여부, `FileKind`)
+- [x] 1-2. `SearchCriteria` (검색어·대상(이름/이름+내용), 확장자 그룹+직접 입력, 종류, 크기, 날짜 프리셋·기준, 옵션 3종, 위치). `Codable`이라 2단계 검색 저장에 그대로 사용 가능
+- [x] 1-3. `FileKind`, `ExtensionGroup`, `DatePreset`/`DateField`/`DateBounds`, `SearchScope`
 
-**검색 엔진**
-- [ ] 1-4. `SpotlightQueryBuilder`: `SearchCriteria` → `NSPredicate` (단위 테스트 작성)
-- [ ] 1-5. `SpotlightSearchEngine`: `NSMetadataQuery` 래핑, 결과 배치 스트리밍, 취소, 완료 시간 측정
-- [ ] 1-6. `FileSystemScanner`: 백그라운드 순회, 숨김/패키지 옵션, 같은 조건 필터, 취소, 진행 상황
-- [ ] 1-7. `SearchCoordinator`: 디바운스, 엔진 선택·병합·중복 제거, 정렬, 표시 상한
-- [ ] 1-8. 한글 NFC/NFD 파일명 테스트 (같은 이름을 두 방식으로 만들어 둘 다 검색되는지)
+**검색 엔진** (`Chaja/Search/`)
+- [x] 1-4. `SpotlightQueryBuilder`: `SearchCriteria` → **Spotlight 쿼리 문자열**(`mdfind` 문법) → `NSPredicate(fromMetadataQueryString:)`. NSPredicate를 직접 만들지 않고 문자열을 쓰는 이유: `mdfind`로 똑같이 실행해 검증 가능
+- [x] 1-5. `SpotlightSearchEngine`: `NSMetadataQuery`, 0.1초 배치, 상한(기본 1만 개) 도달 시 쿼리 중지, `valueListAttributes`로 속성 일괄 수신
+- [x] 1-6. `FileSystemScanner`: `Task.detached` + `FileManager.enumerator`, 숨김/패키지 옵션, `FileMatcher`로 같은 조건 판정(본문 검색 제외), 취소 가능
+- [x] 1-7. `SearchModel`(계획의 SearchCoordinator): 350ms 디바운스, 두 엔진 병합·경로 기준 중복 제거, 숨김 경로 후처리, 정렬(3,000개 이하는 배치마다, 그 이상은 완료 시 1회), 세대 번호로 이전 검색 결과 무시
+- [x] 1-8. 한글 NFC/NFD: 실제 파일 두 개로 확인 — `cd`·`d` 수식어 모두 양쪽 다 검색됨. 직접 스캔은 `precomposedStringWithCanonicalMapping`으로 정규화 후 비교
 
-**UI**
-- [ ] 1-9. `ContentView`: `NavigationSplitView` + `.inspector` + 하단 상태바
-- [ ] 1-10. 사이드바: 검색창, 확장자 칩, 종류 칩, 크기 범위, 날짜, 옵션 토글, 위치(+폴더 선택), 찾기 버튼, "필터 초기화"
-- [ ] 1-11. 결과 리스트(`Table`: 이름/위치/크기/수정일, 정렬, 다중 선택) + 그리드 보기 + 툴바
-- [ ] 1-12. 빈 상태 / 검색 중 / 결과 상한 초과 안내
-- [ ] 1-13. 인스펙터: Quick Look 썸네일, 정보, Finder에서 보기 / 경로 복사 / 열기
-- [ ] 1-14. 스페이스바 Quick Look 패널, 드래그 앤 드롭, 우클릭 메뉴(열기, Finder에서 보기, 경로 복사, 휴지통으로 이동)
-- [ ] 1-15. 키보드 단축키 (3.2절)
-- [ ] 1-16. 전체 디스크 접근 권한 확인 및 안내 화면
-- [ ] 1-17. 아이콘 생성 지연 로딩, 결과 5,000개 이상에서 스크롤 성능 확인
+**UI** (`Chaja/Views/`)
+- [x] 1-9. `ContentView`: `NavigationSplitView` + `.inspector` + 하단 `StatusBar`, `.searchable(placement: .sidebar)`
+- [x] 1-10. `FilterSidebar`: 이름/이름+내용 전환, 확장자 칩(+직접 입력), 종류 칩, 크기(입력+프리셋), 날짜(수정일/생성일 + 프리셋 + 직접 선택), 옵션 토글, 위치(+폴더 선택), 하단 찾기/중지 버튼·상태·필터 초기화
+- [x] 1-11. `ResultsTable`(이름/위치/크기/수정일/종류, 열 정렬, 다중 선택) + `ResultsGrid`(썸네일) + 툴바(보기 전환, 정렬 메뉴, 미리보기 토글)
+- [x] 1-12. 빈 상태(처음/검색 중/결과 없음) + 상한 초과 배너
+- [x] 1-13. `InspectorView`: 단일 선택(썸네일, 정보, Finder에서 보기/열기/훑어보기/경로 복사), 다중 선택(개수·합계 크기)
+- [x] 1-14. 스페이스바 훑어보기(`.quickLookPreview`), 행 드래그(`.draggable(url)`), 우클릭 메뉴 — **사용자 화면 확인 필요**
+- [x] 1-15. 메뉴 단축키: ⌘F 검색창, ⌘↩ 지금 검색, ⌘O 열기, ⌘R Finder에서 보기, ⌘Y 훑어보기, ⌥⌘C 경로 복사, ⌘⌫ 휴지통(텍스트 입력 중엔 원래 동작 유지)
+- [x] 1-16. 전체 디스크 접근 권한 확인(TCC.db 열기 시도) + 첫 실행 안내 시트 + 직접 스캔 옵션 켤 때 안내, 앱 활성화 시 재확인
+- [x] 1-17. 리스트 아이콘은 콘텐츠 유형별 캐시(앱·패키지만 파일별), 썸네일은 보일 때만 생성 — **대량 결과 스크롤 체감은 사용자 확인 필요**
 
 **1단계 검증 기준**
-- [ ] 2.2절과 같은 쿼리를 앱에서 실행해 결과 수가 `mdfind`와 일치
-- [ ] 좁은 조건 검색 1초 이내 첫 결과 표시
-- [ ] 넓은 검색 중에도 UI가 멈추지 않고, 새 검색 시 이전 검색이 취소됨
-- [ ] 숨김 파일 옵션 켜면 `~/.zshrc` 같은 파일이 검색됨
+- [x] 앱 엔진 결과 수 = `mdfind -count` (통합 테스트 6개 케이스: 다운로드 전체, 홈 PDF, 문서+30일+10MB, 이미지 1MB+, 맥 전체 이름 '정산', 이름+내용 '정산')
+- [x] 좁은 조건 첫 결과 1초 이내 (넓은 검색도 첫 결과 0.08초)
+- [x] 넓은 검색(홈의 코드 파일 수십만 개): 1만 개 상한까지 1.5~1.7초 후 자동 중지 — 테스트로 5초 미만 보장
+- [x] 숨김 파일·패키지 내부 직접 스캔 (`FileSystemScannerTests`)
+- [x] 사용자 화면 확인 (UI 배치, 훑어보기, 드래그, 단축키) — 확인 중 받은 피드백 3건 수정:
+  - **한글 입력 깨짐**("견적" → "견ㄱ"): SwiftUI `.searchable`이 조합 중 값을 되씀 → `Views/Sidebar/SearchField.swift`(NSSearchField 래핑)로 교체. 조합 중(`hasMarkedText`)에는 바인딩 갱신·값 덮어쓰기를 하지 않음. **검색창을 다시 SwiftUI 기본 컨트롤로 바꾸지 말 것**
+  - 옵션 스위치 3개가 가운데 정렬 → 제목은 왼쪽, 스위치는 오른쪽 끝으로 배치
+  - 사이드바 스크롤 내용이 검색창·하단 버튼 밑으로 겹쳐 보임 → `safeAreaInset` 대신 VStack 세 칸(검색창 / 스크롤 / 하단) + 구분선
+
+**테스트**: `ChajaTests/` — Swift Testing 22개 (쿼리 빌더, 이름 매칭, 스캐너, Spotlight 통합·성능). `xcodebuild … test`로 실행. 개별 실행은 `-only-testing:'ChajaTests/스위트/함수()'`처럼 괄호 포함
 
 ### 2단계 — 편의 기능
 - [ ] 2-1. 전역 단축키 (기본 ⌥Space 또는 ⌃⌥F, 설정에서 변경) → Chaja 창 앞으로 + 검색창 포커스
@@ -261,6 +276,7 @@ Chaja/
 | SwiftUI `Table`이 대량 행에서 느림 | `NSTableView` 래핑으로 교체 |
 | 종류(UTType) 매핑이 실제 파일과 다름 | 1단계에서 실제 파일로 검증, 확장자 보조 매칭 |
 | 직접 스캔이 오래 걸림 | 선택한 위치만 순회, 제외 폴더 생략, 진행률·취소 |
+| 빌드 중 "codesign이 키체인 접근 허용" 암호 창이 반복해서 뜸 | CLI로 가져온 키는 접근 허용 목록(partition list)이 비어 있음. 사용자가 터미널에서 1회 실행해 해결함(2026-11-05): `security set-key-partition-list -S apple-tool:,apple:,codesign: -s -l "Chaja Self-Signed" ~/Library/Keychains/login.keychain-db` (로그인 암호 입력). 인증서를 재생성하면 다시 실행 필요 |
 | 키체인에서 `Chaja Self-Signed` 인증서가 삭제됨 | 0-6 절차로 재생성. 단, 인증서가 바뀌면 각 맥에서 전체 디스크 접근 권한을 다시 허용해야 함 |
 | 앱 복사 후 Gatekeeper 차단 | "그래도 열기" 안내. 필요 시 `xattr -dr com.apple.quarantine /Applications/Chaja.app` |
 | 에이전트 샌드박스에서 Spotlight·앱 실행 불가 | 해당 명령은 전체 권한으로 실행 |
@@ -279,6 +295,7 @@ Chaja/
    새 Swift 파일을 추가하면 `xcodegen generate`를 다시 실행해야 프로젝트에 포함된다
 4. 응답은 항상 한국어로
 5. **각 단계가 끝나면 사용자 확인을 받은 뒤 다음 단계로 진행** (사용자 요청)
+   - 원격 저장소: https://github.com/tiper2066/chaja (브랜치 `main`). 단계 완료·확인 후 커밋하고 푸시
 6. 작업 후 체크박스·1.3 단계 표·8장 작업 로그 갱신
 
 ---
@@ -288,4 +305,6 @@ Chaja/
 | 날짜 | 내용 |
 |---|---|
 | 2026-11-05 | 사전 검토 완료, 결정 사항 확정, 핸드오프 문서 작성 |
-| 2026-11-05 | 0단계 완료: git, XcodeGen, `project.yml`, 아이콘, 자체 서명 인증서, Debug/Release 빌드·실행 확인. Hardened Runtime 끔. **사용자 확인 후 1단계(1-1) 시작** |
+| 2026-11-05 | 0단계 완료: git, XcodeGen, `project.yml`, 아이콘, 자체 서명 인증서, Debug/Release 빌드·실행 확인. Hardened Runtime 끔 |
+| 2026-11-05 | 1단계 구현: 모델·검색 엔진·UI 전체, 테스트 22개 통과. Swift 6.2 기본 MainActor 격리(`SWIFT_DEFAULT_ACTOR_ISOLATION`) 사용 — 백그라운드에서 쓰는 모델·검색 타입은 `nonisolated`로 표시. 키체인 암호 창 문제 해결, Spotlight 속성 일괄 수신으로 넓은 검색 20.3초 → 1.7초 |
+| 2026-11-05 | 1단계 사용자 확인 완료(한글 입력·스위치 정렬·사이드바 겹침 수정). 커밋·푸시 후 2단계 시작 |

@@ -5,10 +5,13 @@ options:
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
+  developmentLanguage: ko
 
 settings:
   base:
     SWIFT_VERSION: "6.0"
+    SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     ARCHS: arm64
@@ -38,12 +41,34 @@ targets:
       properties:
         CFBundleDisplayName: Chaja
         CFBundleName: Chaja
+        CFBundleDevelopmentRegion: ko
+        CFBundleLocalizations: [ko]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.utilities
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSHumanReadableCopyright: "© 2026 Chaja"
+        NSDesktopFolderUsageDescription: 데스크탑에 있는 파일을 찾아 보여주려면 접근 권한이 필요합니다.
+        NSDocumentsFolderUsageDescription: 문서 폴더에 있는 파일을 찾아 보여주려면 접근 권한이 필요합니다.
+        NSDownloadsFolderUsageDescription: 다운로드 폴더에 있는 파일을 찾아 보여주려면 접근 권한이 필요합니다.
+        NSRemovableVolumesUsageDescription: 외장 드라이브에 있는 파일을 찾아 보여주려면 접근 권한이 필요합니다.
+        NSNetworkVolumesUsageDescription: 네트워크 드라이브에 있는 파일을 찾아 보여주려면 접근 권한이 필요합니다.
     entitlements:
       path: Chaja/Resources/Chaja.entitlements
       properties:
         com.apple.security.app-sandbox: false
+    scheme:
+      testTargets:
+        - ChajaTests
+
+  ChajaTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ChajaTests
+    dependencies:
+      - target: Chaja
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.n22309002.ChajaTests
