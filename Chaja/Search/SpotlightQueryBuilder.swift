@@ -50,6 +50,15 @@ nonisolated enum SpotlightQueryBuilder {
             }
         }
 
+        let whereFrom = criteria.trimmedWhereFrom
+        if !whereFrom.isEmpty {
+            clauses.append(#"kMDItemWhereFroms == "*\#(escape(whereFrom))*"cd"#)
+        }
+
+        if !criteria.tags.isEmpty {
+            clauses.append(group(criteria.tags.sorted().map { #"kMDItemUserTags == "\#(escape($0))"cd"# }))
+        }
+
         return clauses.isEmpty ? matchEverything : clauses.joined(separator: " && ")
     }
 

@@ -34,6 +34,17 @@ struct SpotlightQueryBuilderTests {
             == #"(kMDItemFSName == "*정산*"cd || kMDItemTextContent == "정산*"cdw)"#)
     }
 
+    @Test func whereFromUsesSubstringMatch() {
+        #expect(query { $0.whereFrom = " drive.google " } == #"kMDItemWhereFroms == "*drive.google*"cd"#)
+    }
+
+    @Test func tagsAreCombinedWithOr() {
+        #expect(query { $0.tags = ["업무", "빨간색"] }
+            == #"(kMDItemUserTags == "빨간색"cd || kMDItemUserTags == "업무"cd)"#)
+        #expect(query { $0.tags = ["업무"]; $0.extensionGroupIDs = [".pdf"] }
+            == #"kMDItemFSName == "*.pdf"c && kMDItemUserTags == "업무"cd"#)
+    }
+
     @Test func specialCharactersAreEscaped() {
         #expect(SpotlightQueryBuilder.escape(#"a*b"c\d?"#) == #"a\*b\"c\\d\?"#)
     }

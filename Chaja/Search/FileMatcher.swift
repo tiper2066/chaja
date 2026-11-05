@@ -4,7 +4,7 @@ import Foundation
 nonisolated struct FileMatcher: Sendable {
     static let resourceKeys: [URLResourceKey] = [
         .nameKey, .fileSizeKey, .creationDateKey, .contentModificationDateKey,
-        .contentTypeKey, .localizedTypeDescriptionKey, .isDirectoryKey, .isPackageKey,
+        .contentTypeKey, .localizedTypeDescriptionKey, .isDirectoryKey, .isPackageKey, .tagNamesKey,
     ]
 
     private let words: [String]
@@ -15,8 +15,12 @@ nonisolated struct FileMatcher: Sendable {
     private let maxSize: Int64?
     private let dateBounds: DateBounds?
     private let dateField: DateField
+    private let whereFrom: String
+    private let tags: Set<String>
 
     init(criteria: SearchCriteria, now: Date = .now) {
+        whereFrom = criteria.trimmedWhereFrom
+        tags = Set(criteria.tags.map { $0.lowercased() })
         compareOptions = criteria.caseSensitive ? [.diacriticInsensitive] : [.caseInsensitive, .diacriticInsensitive]
         words = criteria.words.map(\.precomposedStringWithCanonicalMapping)
         extensions = Set(criteria.extensions)
@@ -62,6 +66,15 @@ nonisolated struct FileMatcher: Sendable {
         if let dateBounds {
             let date = dateField == .modified ? item.modified : item.created
             guard let date, dateBounds.contains(date) else { return nil }
+        }
+        if !tags.isEmpty {
+            let fileTags = Set((values.tagNames ?? []).map { $0.lowercased() })
+            guard !fileTags.isDisjoint(with: tags) else { return nil }
+        }
+        if !whereFrom.isEmpty {
+            let sources = FileMetadata.whereFroms(of: url)
+            guard sources.contains(where: { $0.range(of: whereFrom, options: [.caseInsensitive, .diacriticInsensitive]) != nil })
+            else { return nil }
         }
         return item
     }

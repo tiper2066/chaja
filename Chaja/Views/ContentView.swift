@@ -7,6 +7,8 @@ struct ContentView: View {
     @AppStorage("showInspector") private var showInspector = true
     @AppStorage("didShowAccessGuide") private var didShowAccessGuide = false
     @State private var showAccessGuide = false
+    @State private var saveName = ""
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         NavigationSplitView {
@@ -26,6 +28,22 @@ struct ContentView: View {
         .onChange(of: model.criteria) { model.scheduleSearch() }
         .onAppear {
             if !didShowAccessGuide && !model.hasFullDiskAccess { showAccessGuide = true }
+            let openWindow = openWindow
+            MainWindow.open = { openWindow(id: MainWindow.id) }
+            HotKeyService.shared.onPress = { [model] in
+                MainWindow.toggle { model.requestSearchFocus() }
+            }
+            model.loadTags()
+        }
+        .alert("현재 검색 저장", isPresented: $model.isPresentingSaveSearch) {
+            TextField("이름", text: $saveName, prompt: Text(model.criteria.summary))
+            Button("저장") {
+                model.saveCurrentSearch(named: saveName)
+                saveName = ""
+            }
+            Button("취소", role: .cancel) { saveName = "" }
+        } message: {
+            Text("저장한 검색은 사이드바 맨 위와 ‘검색’ 메뉴(⌘1~9)에서 바로 불러올 수 있어요.")
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshPermissions()

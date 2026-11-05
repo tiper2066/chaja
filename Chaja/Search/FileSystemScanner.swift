@@ -5,7 +5,7 @@ nonisolated enum FileSystemScanner {
     /// 맥 전체를 순회할 때 건너뛰는 경로. `/System/Volumes/Data`는 루트와 같은 내용이라 중복된다.
     static let skippedRootPaths: Set<String> = ["/System", "/dev", "/cores", "/private/var/vm", "/Volumes/Recovery"]
 
-    static func scan(criteria: SearchCriteria, limit: Int) -> AsyncStream<[FileItem]> {
+    static func scan(criteria: SearchCriteria, exclusions: ExclusionRules = .none, limit: Int) -> AsyncStream<[FileItem]> {
         let roots = [criteria.scope.url ?? URL(fileURLWithPath: "/")]
         let options: FileManager.DirectoryEnumerationOptions = [
             criteria.includeHidden ? [] : .skipsHiddenFiles,
@@ -27,7 +27,8 @@ nonisolated enum FileSystemScanner {
 
                     while let url = enumerator.nextObject() as? URL {
                         if Task.isCancelled { break rootLoop }
-                        if skippedRootPaths.contains(url.path) {
+                        let path = url.path
+                        if skippedRootPaths.contains(path) || exclusions.excludes(path: path) {
                             enumerator.skipDescendants()
                             continue
                         }

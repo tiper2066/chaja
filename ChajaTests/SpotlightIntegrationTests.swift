@@ -21,6 +21,9 @@ struct SpotlightIntegrationTests {
         Case(label: "홈의 이미지 1MB 이상", scope: .home) { $0.kinds = [.image]; $0.minSizeMB = 1 },
         Case(label: "맥 전체 이름 '정산'", scope: .computer) { $0.text = "정산" },
         Case(label: "맥 전체 이름+내용 '정산'", scope: .computer) { $0.text = "정산"; $0.textTarget = .nameAndContent },
+        Case(label: "다운로드 출처 'google'", scope: .downloads) { $0.whereFrom = "google" },
+        Case(label: "홈의 PDF 중 출처 'http'", scope: .home) { $0.extensionGroupIDs = [".pdf"]; $0.whereFrom = "http" },
+        Case(label: "맥 전체 빨간색·초록색 태그", scope: .computer) { $0.tags = ["빨간색", "초록색"] },
     ]
 
     @Test(arguments: cases)

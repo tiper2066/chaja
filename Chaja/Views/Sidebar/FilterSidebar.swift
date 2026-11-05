@@ -4,24 +4,35 @@ struct FilterSidebar: View {
     @Bindable var model: SearchModel
     @State private var customExtensionInput = ""
     @State private var isChoosingFolder = false
+    @State private var renamingSearch: SavedSearch?
+    @State private var renameText = ""
+    @AppStorage(AppSettings.Key.excludedFolders) private var excludedFoldersText = AppSettings.defaultExcludedFoldersText
 
     private var criteria: Binding<SearchCriteria> { $model.criteria }
 
     var body: some View {
         // 검색창·하단 버튼을 스크롤 영역 위에 겹치지 않도록 세 칸으로 나눈다.
         VStack(spacing: 0) {
-            SearchField(text: criteria.text, prompt: "파일명 또는 내용",
-                        focusRequest: model.searchFocusRequest, onSubmit: model.search)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+            HStack(spacing: 6) {
+                SearchField(text: criteria.text, prompt: "파일명 또는 내용",
+                            focusRequest: model.searchFocusRequest) { model.search(explicit: true) }
+                SearchHistoryMenu(model: model)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if !model.library.saved.isEmpty {
+                        savedSection
+                    }
                     textTargetSection
                     extensionSection
                     kindSection
                     sizeSection
                     dateSection
+                    tagSection
+                    sourceSection
                     optionsSection
                     locationSection
                 }
@@ -38,9 +49,97 @@ struct FilterSidebar: View {
                 model.criteria.scope = .folder(url)
             }
         }
+        .alert("검색 이름 변경", isPresented: Binding(get: { renamingSearch != nil }, set: { if !$0 { renamingSearch = nil } })) {
+            TextField("이름", text: $renameText)
+            Button("변경") {
+                if let renamingSearch { model.library.rename(renamingSearch, to: renameText) }
+            }
+            Button("취소", role: .cancel) {}
+        }
     }
 
     // MARK: - 섹션
+
+    private var savedSection: some View {
+        SidebarSection(title: "저장된 검색", symbol: "bookmark") {
+            VStack(spacing: 2) {
+                ForEach(Array(model.library.saved.enumerated()), id: \.element.id) { index, saved in
+                    savedRow(saved, shortcut: index < 9 ? index + 1 : nil)
+                }
+            }
+            .font(.system(size: 12))
+        }
+    }
+
+    private func savedRow(_ saved: SavedSearch, shortcut: Int?) -> some View {
+        let isCurrent = model.criteria.isSameSearch(as: saved.criteria)
+        return Button {
+            model.apply(saved.criteria)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "bookmark.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 16)
+                Text(saved.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer()
+                if let shortcut {
+                    Text("⌘\(shortcut)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(isCurrent ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(saved.criteria.summary)
+        .contextMenu {
+            Button("이름 변경…") {
+                renameText = saved.name
+                renamingSearch = saved
+            }
+            Button("현재 조건으로 덮어쓰기") {
+                model.library.delete(saved)
+                model.library.save(model.criteria, name: saved.name)
+            }
+            Divider()
+            Button("삭제", role: .destructive) { model.library.delete(saved) }
+        }
+    }
+
+    private var tagSection: some View {
+        SidebarSection(title: "태그", symbol: "tag") {
+            if !model.criteria.tags.isEmpty {
+                Button("초기화") { model.criteria.tags = [] }
+                    .buttonStyle(.link)
+                    .font(.system(size: 11))
+            }
+        } content: {
+            FlowLayout {
+                ForEach(model.availableTags) { tag in
+                    Chip(title: tag.name, symbol: tag.color == nil ? "tag" : "circle.fill",
+                         tint: tag.color.map(Color.init(nsColor:)) ?? .secondary,
+                         isOn: model.criteria.tags.contains(tag.name)) {
+                        model.criteria.tags.formSymmetricDifference([tag.name])
+                    }
+                }
+            }
+            .help("여러 개를 고르면 그중 하나라도 붙은 파일을 찾습니다.")
+        }
+    }
+
+    private var sourceSection: some View {
+        SidebarSection(title: "다운로드 출처", symbol: "arrow.down.circle") {
+            SearchField(text: criteria.whereFrom, prompt: "사이트 주소 일부 (예: google, kakao)",
+                        isLarge: false) { model.search(explicit: true) }
+                .help("브라우저·메신저로 받은 파일에 기록된 다운로드 주소에서 찾습니다.")
+        }
+    }
 
     private var textTargetSection: some View {
         Picker("검색 대상", selection: criteria.textTarget) {
@@ -147,11 +246,19 @@ struct FilterSidebar: View {
                 optionToggle("숨김 파일 포함", detail: "점(.)으로 시작하는 파일까지", isOn: criteria.includeHidden)
                 optionToggle("패키지 내용 검색", detail: "앱 등 패키지 내부까지", isOn: criteria.searchPackages)
                 optionToggle("대소문자 구분", detail: "영문 대소문자를 정확히 일치", isOn: criteria.caseSensitive)
+                optionToggle("제외 폴더 적용", detail: exclusionDetail, isOn: criteria.applyExclusions)
+                    .help(excludedFoldersText)
             }
             if model.criteria.needsDirectScan {
                 directScanNotice
             }
         }
+    }
+
+    private var exclusionDetail: String {
+        let entries = AppSettings.entries(fromText: excludedFoldersText)
+        guard let first = entries.first else { return "설정에서 제외할 폴더를 추가하세요" }
+        return entries.count == 1 ? first : "\(first) 외 \(entries.count - 1)개"
     }
 
     private var locationSection: some View {
@@ -182,7 +289,7 @@ struct FilterSidebar: View {
     private var searchFooter: some View {
         VStack(spacing: 6) {
             Button {
-                if model.phase == .searching { model.cancel() } else { model.search() }
+                if model.phase == .searching { model.cancel() } else { model.search(explicit: true) }
             } label: {
                 Label(model.phase == .searching ? "검색 중지" : "찾기",
                       systemImage: model.phase == .searching ? "stop.fill" : "magnifyingglass")
@@ -196,7 +303,7 @@ struct FilterSidebar: View {
             HStack {
                 Text(footerStatus)
                 Spacer()
-                if model.criteria != SearchCriteria() {
+                if !model.criteria.isSameSearch(as: SearchCriteria(scope: AppSettings.defaultScope)) {
                     Button("필터 초기화", action: model.resetFilters)
                         .buttonStyle(.link)
                 }

@@ -6,7 +6,8 @@ import SwiftUI
 struct SearchField: NSViewRepresentable {
     @Binding var text: String
     var prompt: String
-    var focusRequest: Int
+    var focusRequest = 0
+    var isLarge = true
     var onSubmit: () -> Void
 
     func makeNSView(context: Context) -> NSSearchField {
@@ -17,8 +18,8 @@ struct SearchField: NSViewRepresentable {
         field.sendsSearchStringImmediately = false
         field.target = context.coordinator
         field.action = #selector(Coordinator.submit(_:))
-        field.controlSize = .large
-        field.font = .systemFont(ofSize: 13)
+        field.controlSize = isLarge ? .large : .small
+        field.font = .systemFont(ofSize: isLarge ? 13 : 11)
         field.stringValue = text
         return field
     }

@@ -33,7 +33,7 @@
 |---|---|---|
 | 0단계 | 개발 환경·프로젝트 뼈대·서명·아이콘 | ✅ 완료 (사용자 확인, 커밋 `6695318`) |
 | 1단계 | 핵심 검색 앱 (시안 기능 + Spotlight + 직접 스캔 + Quick Look) | ✅ 완료 (사용자 확인) |
-| 2단계 | 편의 기능 (단축키, 검색 저장, 제외 폴더, 다운로드 출처, 태그) | ⬜ 미착수 |
+| 2단계 | 편의 기능 (단축키, 검색 저장, 제외 폴더, 다운로드 출처, 태그) + README | ✅ 완료 (사용자 확인) |
 | 3단계 | 분석 기능 (중복 파일, 비슷한 이미지) | ⬜ 미착수 |
 | 4단계 | 배포 (Release 빌드, M5 맥 설치 검증) | ⬜ 미착수 |
 
@@ -69,6 +69,15 @@
 - 이스케이프: 값 안의 `\`, `"`, `*`, `?` 앞에 `\`. 날짜는 `$time.iso(2026-10-01T00:00:00Z)`
 - `/tmp`(`/private/tmp`)는 색인되지 않는다. Spotlight 실험용 파일은 `build/probe/`처럼 색인되는 곳에 만들 것
 - **성능 핵심:** `NSMetadataItem.value(forAttribute:)`는 호출마다 Spotlight에 묻는다(1만 개 × 7속성 = 20.3초). `query.valueListAttributes`에 속성을 지정하고 `query.value(ofAttribute:forResultAt:)`로 읽으면 1.7초. 단 **`kMDItemPath`는 값 목록에 넣어도 nil**이라 경로만 항목에서 직접 읽는다
+
+### 2.2.2 구현 중 확인한 사실 (2단계)
+- 다운로드 출처: `kMDItemWhereFroms == "*google*"cd` 동작(이 맥 다운로드 폴더 74개 중 27개). 직접 스캔은 확장 속성 `com.apple.metadata:kMDItemWhereFroms`(바이너리 plist 문자열 배열)를 읽는다
+- 태그: `kMDItemUserTags == "업무"cd`, 태그 있는 파일 전체는 `kMDItemUserTags == "*"`. `NSMetadataItemUserTagsKey` 상수는 Swift에 없어 문자열 `"kMDItemUserTags"`를 쓴다
+- 제외 폴더는 `kMDItemPath`로 쿼리할 수 없어 결과 후처리. 걸러질 몫을 감안해 제외 규칙이 있으면 Spotlight 상한을 결과 상한의 5배로 받는다
+- 창을 닫아도 앱이 살아 있어야 전역 단축키가 동작 → `applicationShouldTerminateAfterLastWindowClosed = false`, 닫힌 창은 SwiftUI `openWindow`를 보관해 두었다가 다시 연다
+- 등록된 Carbon 단축키는 키 입력을 가로채므로, 설정에서 새 단축키를 기록하는 동안에는 잠시 해제한다
+- `@AppStorage`는 문자열 배열을 못 다뤄 제외 폴더는 줄바꿈으로 이은 문자열로 저장
+- Cursor 샌드박스 안에서 빌드하면 `@Observable` 매크로 플러그인 서버가 막혀 실패한다 → 빌드·테스트는 샌드박스 밖(all 권한)에서
 
 ### 2.3 불가능하거나 변경한 기능
 - **"M5 가속 / M5 Neural Engine 분석"**: Spotlight 검색은 칩·Neural Engine과 무관 → 표현 제거.
@@ -138,10 +147,11 @@ Chaja/
 │   ├── build-release.sh         # Release 빌드 + zip 생성
 │   └── make-icon.sh             # chaja_icon.png → AppIcon 세트
 └── Chaja/
-    ├── App/            ChajaApp.swift, AppDelegate.swift, AppState.swift
-    ├── Models/         SearchCriteria, FileItem, FileKind, DateFilter, SizeFilter, SearchScope, SavedSearch
+    ├── App/            ChajaApp.swift (+AppDelegate, ChajaCommands)
+    ├── Models/         SearchCriteria, FileItem, FileKind, DateFilter, ExtensionGroup, SearchScope, ExclusionRules, HotKey, AppSettings
     ├── Search/         SearchModel(조율·파일 동작), SpotlightSearchEngine, SpotlightQueryBuilder, FileSystemScanner, FileMatcher
-    ├── Services/       PermissionService, IconProvider(+ThumbnailProvider) / 2단계: HotKeyService, SavedSearchStore
+    ├── Services/       PermissionService, IconProvider(+ThumbnailProvider), HotKeyService(+MainWindow, LaunchAtLogin), SearchLibrary(저장·최근 검색), FileMetadata(+FinderTag, TagCatalog)
+    ├── Views/Settings/ SettingsView (일반: 단축키·로그인 실행·결과 상한·기본 위치 / 제외 폴더)
     ├── Analysis/       DuplicateFinder, SimilarImageFinder          # 3단계
     ├── Views/
     │   ├── ContentView.swift
@@ -173,8 +183,8 @@ Chaja/
 | 크기 | `kMDItemFSSize` BETWEEN | MB → 바이트 변환 |
 | 수정일 | `kMDItemFSContentChangeDate >= 날짜` | |
 | 생성일 | `kMDItemFSCreationDate` | 날짜 기준 선택: 수정일/생성일 |
-| 다운로드 출처 (2단계) | `kMDItemWhereFroms LIKE[cd] "*kakao*"` | |
-| 태그 (2단계) | `kMDItemUserTags == "빨간색"` | |
+| 다운로드 출처 (2단계) | `kMDItemWhereFroms == "*kakao*"cd` | |
+| 태그 (2단계) | `kMDItemUserTags == "빨간색"cd` OR … | 여러 태그는 OR |
 | 위치 | `NSMetadataQuery.searchScopes` | 전체 Mac = `NSMetadataQueryLocalComputerScope` |
 | 제외 폴더 (2단계) | 쿼리 불가 → **결과 후처리**로 경로 접두어 제외 | |
 
@@ -246,13 +256,16 @@ Chaja/
 **테스트**: `ChajaTests/` — Swift Testing 22개 (쿼리 빌더, 이름 매칭, 스캐너, Spotlight 통합·성능). `xcodebuild … test`로 실행. 개별 실행은 `-only-testing:'ChajaTests/스위트/함수()'`처럼 괄호 포함
 
 ### 2단계 — 편의 기능
-- [ ] 2-1. 전역 단축키 (기본 ⌥Space 또는 ⌃⌥F, 설정에서 변경) → Chaja 창 앞으로 + 검색창 포커스
-- [ ] 2-2. 설정 창 (`Settings` scene): 단축키, 결과 표시 상한, 제외 폴더, 기본 위치
-- [ ] 2-3. 검색 조건 저장 (이름 붙여 저장 → 사이드바 상단 목록, 이름 변경·삭제)
-- [ ] 2-4. 최근 검색 (자동 기록 10개)
-- [ ] 2-5. 제외 폴더 (기본값 제안: `node_modules`, `.git`, `~/Library/Caches`, `DerivedData`) 후처리 필터 + 직접 스캔 시 하위 진입 생략
-- [ ] 2-6. 다운로드 출처 필터 (`kMDItemWhereFroms`), 인스펙터에 출처 URL 표시
-- [ ] 2-7. Finder 태그 필터 (기존 태그 목록 불러와 칩 표시), 인스펙터에 태그 표시
+- [x] 2-1. 전역 단축키 (기본 ⌃⌥F, 설정에서 변경·끄기) → Chaja 창 앞으로 + 검색창 포커스, 앞에 있으면 숨김. 창을 닫아도 앱 유지
+- [x] 2-2. 설정 창 (`Settings` scene, ⌘,): 단축키 기록, 로그인 시 자동 실행(`SMAppService`), 결과 최대 개수, 기본 위치, 제외 폴더 탭
+- [x] 2-3. 검색 조건 저장 (⌘S 또는 시계 메뉴 → 이름 입력 → 사이드바 상단 "저장된 검색", 우클릭으로 이름 변경·덮어쓰기·삭제, ‘검색’ 메뉴 ⌘1~9). `~/Library/Application Support/Chaja/searches.json`
+- [x] 2-4. 최근 검색 10개 (Enter·찾기 버튼, 또는 결과를 열기·Finder 보기·경로 복사했을 때 기록. ‘견’→‘견적’처럼 이어 입력한 기록은 합침). 검색창 옆 시계 메뉴와 ‘검색’ 메뉴
+- [x] 2-5. 제외 폴더 (기본값 `node_modules`, `.git`, `DerivedData`, `~/Library/Caches`; 이름은 어디서나, 경로는 그 위치만) 후처리 필터 + 직접 스캔 시 하위 진입 생략. 사이드바 옵션 "제외 폴더 적용"
+- [x] 2-6. 다운로드 출처 필터 (`kMDItemWhereFroms`), 인스펙터에 출처 표시(링크 + 같은 사이트에서 받은 파일 찾기)
+- [x] 2-7. Finder 태그 필터 (기본 색상 태그 + Spotlight로 찾은 사용 중 태그를 칩으로, 여러 개는 OR), 인스펙터에 태그 표시(눌러서 필터)
+- [x] 2-8. 테스트 추가: 쿼리(출처·태그), 제외 규칙, 저장 형식 하위 호환, 검색 기록, 스캐너(제외·태그·출처), mdfind 비교 3건 → 전체 36개 통과
+- [x] 2-9. 사용자 확인
+- [x] 2-10. `README.md` 작성 (사용자 요청으로 4단계에서 앞당김. 기능·단축키·설치·빌드·구조·로드맵). 이후 단계마다 기능·로드맵·테스트 수 갱신
 
 ### 3단계 — 분석 기능
 - [ ] 3-1. 중복 파일 찾기: 현재 결과 또는 선택 폴더 대상 → 크기로 그룹 → 앞부분 해시 → 전체 SHA-256(CryptoKit)으로 확정. 백그라운드·진행률·취소
@@ -264,7 +277,7 @@ Chaja/
 - [ ] 4-1. `scripts/build-release.sh`: Release 빌드 → 자체 인증서 서명 → `codesign --verify` → `Chaja.zip` 생성 (`build/` 폴더)
 - [ ] 4-2. 이 맥(M2)에서 `/Applications`에 설치 후 동작 확인
 - [ ] 4-3. M5 맥에 AirDrop/USB로 복사 → 시스템 설정 > 개인정보 보호 및 보안 > "그래도 열기" → 전체 디스크 접근 권한 허용 → 동작 확인
-- [ ] 4-4. 설치·업데이트 방법을 `README.md`에 정리
+- [ ] 4-4. `README.md`의 설치 절차를 실제 배포 결과에 맞게 보완 (업데이트 방법, 빌드 스크립트 사용법 추가)
 
 ---
 
@@ -308,3 +321,5 @@ Chaja/
 | 2026-11-05 | 0단계 완료: git, XcodeGen, `project.yml`, 아이콘, 자체 서명 인증서, Debug/Release 빌드·실행 확인. Hardened Runtime 끔 |
 | 2026-11-05 | 1단계 구현: 모델·검색 엔진·UI 전체, 테스트 22개 통과. Swift 6.2 기본 MainActor 격리(`SWIFT_DEFAULT_ACTOR_ISOLATION`) 사용 — 백그라운드에서 쓰는 모델·검색 타입은 `nonisolated`로 표시. 키체인 암호 창 문제 해결, Spotlight 속성 일괄 수신으로 넓은 검색 20.3초 → 1.7초 |
 | 2026-11-05 | 1단계 사용자 확인 완료(한글 입력·스위치 정렬·사이드바 겹침 수정). 커밋·푸시 후 2단계 시작 |
+| 2026-11-05 | 2단계 구현(단축키·설정·저장/최근 검색·제외 폴더·출처·태그), 테스트 36개 통과 |
+| 2026-11-05 | 2단계 사용자 확인 완료. README 작성 후 커밋·푸시. 다음은 3단계 |

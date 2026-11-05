@@ -25,6 +25,8 @@ private struct SingleItemInspector: View {
     let model: SearchModel
     let item: FileItem
     @Binding var quickLookURL: URL?
+    @State private var tags: [String] = []
+    @State private var sources: [String] = []
 
     var body: some View {
         ScrollView {
@@ -86,9 +88,80 @@ private struct SingleItemInspector: View {
                 }
                 .font(.system(size: 12))
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                if !tags.isEmpty {
+                    metadataBlock("태그", symbol: "tag") {
+                        FlowLayout {
+                            ForEach(tags, id: \.self) { tag in
+                                Chip(title: tag, symbol: "circle.fill", tint: tagColor(tag),
+                                     isOn: model.criteria.tags.contains(tag)) {
+                                    model.criteria.tags.formSymmetricDifference([tag])
+                                }
+                                .help("이 태그로 찾기")
+                            }
+                        }
+                    }
+                }
+
+                if !sources.isEmpty {
+                    metadataBlock("다운로드 출처", symbol: "arrow.down.circle") {
+                        ForEach(sources, id: \.self) { source in
+                            sourceRow(source)
+                        }
+                    }
+                }
             }
             .padding(16)
         }
+        .task(id: item.id) {
+            let url = item.url
+            let loaded = await Task.detached { (FileMetadata.tags(of: url), FileMetadata.whereFroms(of: url)) }.value
+            tags = loaded.0
+            sources = loaded.1
+        }
+    }
+
+    private func metadataBlock<Content: View>(_ title: String, symbol: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func sourceRow(_ source: String) -> some View {
+        let url = URL(string: source)
+        HStack(spacing: 6) {
+            if let url, url.scheme?.hasPrefix("http") == true {
+                Link(url.host() ?? source, destination: url)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text(source)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: 0)
+            if let host = url?.host() {
+                Button {
+                    model.criteria.whereFrom = host
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+                .buttonStyle(.borderless)
+                .help("\(host)에서 받은 파일 찾기")
+            }
+        }
+        .font(.system(size: 12))
+        .help(source)
+    }
+
+    private func tagColor(_ name: String) -> Color {
+        model.availableTags.first { $0.name == name }?.color.map(Color.init(nsColor:)) ?? .secondary
     }
 
     private var sizeDetail: String {
