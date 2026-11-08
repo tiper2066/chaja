@@ -4,15 +4,23 @@ import SwiftUI
 struct ChajaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = SearchModel()
+    @State private var analysis = AnalysisCenter()
 
     var body: some Scene {
         Window("Chaja", id: MainWindow.id) {
-            ContentView(model: model)
+            ContentView(model: model, analysis: analysis)
                 .frame(minWidth: 980, minHeight: 600)
         }
         .defaultSize(width: 1320, height: 820)
         .windowToolbarStyle(.unified)
-        .commands { ChajaCommands(model: model) }
+        .commands { ChajaCommands(model: model, analysis: analysis) }
+
+        Window("분석", id: AnalysisCenter.windowID) {
+            AnalysisView(center: analysis, search: model)
+                .frame(minWidth: 760, minHeight: 460)
+        }
+        .defaultSize(width: 980, height: 700)
+        .windowToolbarStyle(.unified)
 
         Settings {
             SettingsView()
@@ -44,6 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct ChajaCommands: Commands {
     let model: SearchModel
+    let analysis: AnalysisCenter
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -103,6 +113,18 @@ struct ChajaCommands: Commands {
             Button("필터 초기화") { model.resetFilters() }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
         }
+
+        CommandMenu("분석") {
+            Button("중복 파일 찾기…") { openAnalysis(.duplicates) }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+            Button("비슷한 이미지 찾기…") { openAnalysis(.similarImages) }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+        }
+    }
+
+    private func openAnalysis(_ tool: AnalysisTool) {
+        analysis.tool = tool
+        openWindow(id: AnalysisCenter.windowID)
     }
 
     /// 텍스트 입력 중의 ⌘⌫는 원래 동작(줄 앞까지 지우기)을 유지한다.

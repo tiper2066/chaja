@@ -284,11 +284,16 @@ final class SearchModel {
         guard !items.isEmpty else { return }
         do {
             let trashed = try await NSWorkspace.shared.recycle(items.map(\.url))
-            let removed = Set(trashed.keys.map(\.path))
-            results.removeAll { removed.contains($0.id) }
-            selection.subtract(removed)
+            removeResults(paths: Set(trashed.keys.map(\.path)))
         } catch {
             NSSound.beep()
         }
+    }
+
+    /// 다른 곳(분석 창 등)에서 지운 파일을 결과에서 뺀다.
+    func removeResults(paths: Set<String>) {
+        guard !paths.isEmpty else { return }
+        results.removeAll { paths.contains($0.id) }
+        selection.subtract(paths)
     }
 }

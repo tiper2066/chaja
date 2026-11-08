@@ -90,7 +90,7 @@ private struct SingleItemInspector: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 if !tags.isEmpty {
-                    metadataBlock("태그", symbol: "tag") {
+                    InspectorSection(title: "태그", symbol: "tag") {
                         FlowLayout {
                             ForEach(tags, id: \.self) { tag in
                                 Chip(title: tag, symbol: "circle.fill", tint: tagColor(tag),
@@ -104,12 +104,14 @@ private struct SingleItemInspector: View {
                 }
 
                 if !sources.isEmpty {
-                    metadataBlock("다운로드 출처", symbol: "arrow.down.circle") {
+                    InspectorSection(title: "다운로드 출처", symbol: "arrow.down.circle") {
                         ForEach(sources, id: \.self) { source in
                             sourceRow(source)
                         }
                     }
                 }
+
+                FileInsightsView(item: item, quickLookURL: $quickLookURL)
             }
             .padding(16)
         }
@@ -119,16 +121,6 @@ private struct SingleItemInspector: View {
             tags = loaded.0
             sources = loaded.1
         }
-    }
-
-    private func metadataBlock<Content: View>(_ title: String, symbol: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: symbol)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

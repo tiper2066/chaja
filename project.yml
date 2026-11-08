@@ -34,6 +34,8 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Chaja/Resources/Chaja.entitlements
         ENABLE_APP_SANDBOX: NO
+        # 비슷한 이미지 묶기에 쓰는 cblas_sgemm의 새 Accelerate 헤더 (옛 헤더는 macOS 13.3부터 deprecated)
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -DACCELERATE_NEW_LAPACK"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Chaja/Resources/Info.plist
     info:

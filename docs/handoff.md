@@ -34,7 +34,7 @@
 | 0단계 | 개발 환경·프로젝트 뼈대·서명·아이콘 | ✅ 완료 (사용자 확인, 커밋 `6695318`) |
 | 1단계 | 핵심 검색 앱 (시안 기능 + Spotlight + 직접 스캔 + Quick Look) | ✅ 완료 (사용자 확인) |
 | 2단계 | 편의 기능 (단축키, 검색 저장, 제외 폴더, 다운로드 출처, 태그) + README | ✅ 완료 (사용자 확인) |
-| 3단계 | 분석 기능 (중복 파일, 비슷한 이미지) | ⬜ 미착수 |
+| 3단계 | 분석 기능 (중복 파일, 비슷한 이미지) | ✅ 완료 (사용자 확인) |
 | 4단계 | 배포 (Release 빌드, M5 맥 설치 검증) | ⬜ 미착수 |
 
 ---
@@ -78,6 +78,15 @@
 - 등록된 Carbon 단축키는 키 입력을 가로채므로, 설정에서 새 단축키를 기록하는 동안에는 잠시 해제한다
 - `@AppStorage`는 문자열 배열을 못 다뤄 제외 폴더는 줄바꿈으로 이은 문자열로 저장
 - Cursor 샌드박스 안에서 빌드하면 `@Observable` 매크로 플러그인 서버가 막혀 실패한다 → 빌드·테스트는 샌드박스 밖(all 권한)에서
+
+### 2.2.3 구현 중 확인한 사실 (3단계)
+- Vision Swift API `GenerateImageFeaturePrintRequest`(revision2): **768차원 Float, 길이 1인 벡터**. `FeaturePrintObservation.distance(to:)`는 **제곱** 유클리드 거리 → 벡터를 직접 저장하고 `vDSP.distanceSquared`로 같은 값을 계산(테스트로 확인)
+- 시스템 배경화면으로 잰 거리: 크기 축소·저화질 재압축·85% 자르기·좌우 반전 사본 0.003~0.12, 같은 디자인 색상 변형 0.13, 밝기만 다른 같은 그림 0.23, 서로 다른 사진 0.3 이상. 356px 작은 이미지는 사본끼리도 0.2~0.6으로 흔들림 → 단계 기준 0.10 / 0.18 / 0.28
+- 특징값 생성: 이미지당 약 3.5ms(동시 4개), 시스템 이미지 827개 2.9초 → 캐시 사용 시 0.03초
+- 모든 쌍 비교는 ‖a‖²+‖b‖²−2a·b 를 `cblas_sgemm`(위 삼각형만, 256행 블록)으로 계산. 1만 개 0.1초. Debug 빌드에서 스칼라 비교 루프(5천만 회)가 5초 걸려 줄마다 `vDSP_vsma`+`vDSP_minv`로 거르고 기준 이하인 줄만 훑는다. 새 CBLAS 헤더를 쓰려고 `OTHER_SWIFT_FLAGS`에 `-Xcc -DACCELERATE_NEW_LAPACK`
+- 중복 찾기: `/System/Library/Frameworks` 23,740개 비교 0.8~3초(디스크 캐시 여부). 앞·뒤 64KB 해시 → 128KB 이하는 그대로 확정, 큰 파일만 전체 SHA-256(`F_NOCACHE`로 읽어 디스크 캐시를 밀어내지 않음)
+- iCloud에서 내려받지 않은 파일(`st_flags`의 `SF_DATALESS` 0x40000000)은 읽으면 다운로드가 시작되므로 건너뛴다. 하드 링크(같은 장치+inode)는 한 파일로 본다
+- Swift 6.2 기본 설정(`NonisolatedNonsendingByDefault`)에선 `nonisolated async` 함수가 호출한 쪽(메인) 실행기에서 돈다 → 무거운 분석 함수는 `@concurrent`로 표시
 
 ### 2.3 불가능하거나 변경한 기능
 - **"M5 가속 / M5 Neural Engine 분석"**: Spotlight 검색은 칩·Neural Engine과 무관 → 표현 제거.
@@ -152,12 +161,13 @@ Chaja/
     ├── Search/         SearchModel(조율·파일 동작), SpotlightSearchEngine, SpotlightQueryBuilder, FileSystemScanner, FileMatcher
     ├── Services/       PermissionService, IconProvider(+ThumbnailProvider), HotKeyService(+MainWindow, LaunchAtLogin), SearchLibrary(저장·최근 검색), FileMetadata(+FinderTag, TagCatalog)
     ├── Views/Settings/ SettingsView (일반: 단축키·로그인 실행·결과 상한·기본 위치 / 제외 폴더)
-    ├── Analysis/       DuplicateFinder, SimilarImageFinder          # 3단계
+    ├── Analysis/       AnalysisTypes(FileGroup·FileStat·동시 실행 도우미), DuplicateFinder, SimilarImageFinder(+FeaturePrintStore), AnalysisSession(+AnalysisCenter)
     ├── Views/
     │   ├── ContentView.swift
     │   ├── Sidebar/    FilterSidebar, SearchField, ExtensionChips, KindChips, SizeRangeSection, DateSection, OptionsSection, LocationSection
     │   ├── Results/    ResultsTableView, ResultsGridView, ResultsToolbar, EmptyStateView
-    │   ├── Inspector/  InspectorView
+    │   ├── Inspector/  InspectorView, FileInsightsView(분석 카드)
+    │   ├── Analysis/   AnalysisView (분석 창: 중복 목록, 비슷한 이미지 그리드)
     │   ├── StatusBarView.swift
     │   └── Onboarding/ FullDiskAccessView
     └── Resources/      Assets.xcassets (AppIcon, 색상), Info.plist, Chaja.entitlements
@@ -268,10 +278,12 @@ Chaja/
 - [x] 2-10. `README.md` 작성 (사용자 요청으로 4단계에서 앞당김. 기능·단축키·설치·빌드·구조·로드맵). 이후 단계마다 기능·로드맵·테스트 수 갱신
 
 ### 3단계 — 분석 기능
-- [ ] 3-1. 중복 파일 찾기: 현재 결과 또는 선택 폴더 대상 → 크기로 그룹 → 앞부분 해시 → 전체 SHA-256(CryptoKit)으로 확정. 백그라운드·진행률·취소
-- [ ] 3-2. 중복 결과 화면: 그룹별 표시, 원본 남기고 나머지 휴지통 이동(확인 대화상자 필수)
-- [ ] 3-3. 비슷한 이미지 찾기: Vision `VNGenerateImageFeaturePrintRequest`로 특징값 생성 → 거리 비교 → 임계값 이하 묶기. 특징값 캐시(경로+수정일 키)
-- [ ] 3-4. 인스펙터에 "중복 N개 / 비슷한 이미지 N개" 카드 (시안의 분석 카드 자리)
+- [x] 3-1. 중복 파일 찾기 (`Analysis/DuplicateFinder`): 현재 검색 결과 또는 폴더(직접 스캔, 제외 폴더 적용, 20만 개 상한) → `lstat` 크기로 묶기 → 앞·뒤 64KB SHA-256 → 큰 파일만 전체 SHA-256(CryptoKit). 동시 4개, 진행률(바이트 기준)·취소. 최소 크기 선택(전체~100MB 이상), 0바이트·하드 링크·iCloud 미다운로드 제외
+- [x] 3-2. 분석 창 (`Window` id `analysis`, 메뉴 ‘분석’ ⇧⌘D / ⇧⌘I, 메인 툴바 ‘분석’ 버튼): 묶음별 목록, 가장 먼저 만든 파일 하나만 남기고 나머지를 미리 체크. 자동 표시(먼저 만든 / 최근 수정 / 해제), 묶음마다 최소 1개는 남도록 강제, 휴지통 이동은 확인 대화상자 후. 옮긴 파일은 검색 결과에서도 뺌
+- [x] 3-3. 비슷한 이미지 찾기 (`Analysis/SimilarImageFinder`): Vision 특징값(새 Swift API `GenerateImageFeaturePrintRequest`) → 블록 행렬곱으로 모든 쌍 거리 → 기준 이하를 union-find로 묶기. 비슷한 정도 3단계(거의 같음/비슷함/느슨하게). 묶음은 큰 파일이 앞, 자동 체크 없음(클릭으로 표시, 두 번 클릭 훑어보기). 특징값 캐시 `~/Library/Application Support/Chaja/FeaturePrints.plist`(경로 키, 크기+수정 시각 일치 시 재사용, 지워진 파일은 저장 시 정리). 한 번에 2만 장 상한
+- [x] 3-4. 인스펙터 분석 카드 (`Views/Inspector/FileInsightsView`): 파일을 고르면 0.3초 뒤 Spotlight `kMDItemFSSize == 크기`로 맥 전체 후보(최대 1,000개, 숨김·제외 폴더 제외)를 찾아 해시로 확인 → "내용이 같은 파일 N개". 이미지면 같은 폴더(최대 300장)에서 비슷한 이미지 썸네일. 선택을 바꾸면 취소
+- [x] 3-5. 테스트 8개 추가(전체 44개): 중복(정확한 사본만·하드 링크·최소 크기·해시), 세션 체크 규칙, 묶기(임계값·블록 경로 = 단순 계산·1만 개 1초 미만), 실제 배경화면 사본 묶기 + Vision 거리 일치 + 캐시 재사용·변경 감지
+- [x] 3-6. 사용자 확인 (분석 창 배치, 체크·휴지통 흐름, 인스펙터 카드, 비슷한 정도 기준) — 수정 요청 없음
 
 ### 4단계 — 배포
 - [ ] 4-1. `scripts/build-release.sh`: Release 빌드 → 자체 인증서 서명 → `codesign --verify` → `Chaja.zip` 생성 (`build/` 폴더)
@@ -323,3 +335,5 @@ Chaja/
 | 2026-11-05 | 1단계 사용자 확인 완료(한글 입력·스위치 정렬·사이드바 겹침 수정). 커밋·푸시 후 2단계 시작 |
 | 2026-11-05 | 2단계 구현(단축키·설정·저장/최근 검색·제외 폴더·출처·태그), 테스트 36개 통과 |
 | 2026-11-05 | 2단계 사용자 확인 완료. README 작성 후 커밋·푸시. 다음은 3단계 |
+| 2026-11-09 | 3단계 구현(중복 파일·비슷한 이미지 엔진, 분석 창, 인스펙터 분석 카드), 테스트 44개 통과. Vision 거리 기준을 시스템 배경화면 사본으로 측정. 사용자 확인 대기 중(확인 후 커밋·푸시) |
+| 2026-11-09 | 3단계 사용자 확인 완료, 커밋·푸시. 4단계 시작 |

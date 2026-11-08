@@ -80,6 +80,20 @@ final class SpotlightSearchEngine {
 }
 
 extension SpotlightSearchEngine {
+    /// 쿼리 결과를 한 번에 모아 돌려준다. 인스펙터처럼 결과가 적은 짧은 조회용.
+    static func collect(queryString: String, scope: SearchScope = .computer,
+                        limit: Int) async -> (items: [FileItem], reachedLimit: Bool) {
+        let engine = SpotlightSearchEngine()
+        var items: [FileItem] = []
+        let reachedLimit = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let started = engine.start(queryString: queryString, scope: scope, limit: limit,
+                                       onBatch: { items += $0 },
+                                       onFinish: { continuation.resume(returning: $0) })
+            if !started { continuation.resume(returning: false) }
+        }
+        return (items, reachedLimit)
+    }
+
     static let attributes = [
         NSMetadataItemFSNameKey, NSMetadataItemFSSizeKey,
         NSMetadataItemFSCreationDateKey, NSMetadataItemFSContentChangeDateKey,

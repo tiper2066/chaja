@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var model: SearchModel
+    let analysis: AnalysisCenter
     @AppStorage("resultsLayout") private var layout: ResultsLayout = .list
     @AppStorage("showInspector") private var showInspector = true
     @AppStorage("didShowAccessGuide") private var didShowAccessGuide = false
@@ -91,6 +92,19 @@ struct ContentView: View {
             .help("정렬")
         }
         ToolbarItem(placement: .primaryAction) {
+            Menu {
+                ForEach(AnalysisTool.allCases) { tool in
+                    Button("\(tool.title) 찾기…", systemImage: tool.symbol) {
+                        analysis.tool = tool
+                        openWindow(id: AnalysisCenter.windowID)
+                    }
+                }
+            } label: {
+                Label("분석", systemImage: "square.on.square.dashed")
+            }
+            .help("중복 파일 · 비슷한 이미지 찾기")
+        }
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 showInspector.toggle()
             } label: {
@@ -152,5 +166,5 @@ struct FullDiskAccessView: View {
 }
 
 #Preview {
-    ContentView(model: SearchModel())
+    ContentView(model: SearchModel(), analysis: AnalysisCenter())
 }
