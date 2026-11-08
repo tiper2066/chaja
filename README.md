@@ -99,16 +99,34 @@ Chaja는 macOS가 이미 만들어 둔 **Spotlight 인덱스를 직접 조회**�
 
 > 개인용 앱이라 App Store나 Apple 공증 없이, 빌드한 `Chaja.app`을 복사해서 설치합니다.
 
-1. `Chaja.app`을 **응용 프로그램** 폴더로 복사합니다 (AirDrop · USB 등).
-2. 처음 열 때 "확인되지 않은 개발자" 경고가 나오면
-   **시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기"** 를 누릅니다.
+### 빌드한 맥에서
+
+```bash
+scripts/build-release.sh --install   # Release 빌드 → 서명 검증 → zip → /Applications 교체 후 실행
+```
+
+### 다른 맥에서
+
+1. 빌드한 맥의 `build/Chaja-<버전>.zip`을 AirDrop · USB 등으로 옮깁니다.
+   (`Chaja.app`을 그대로 보내도 되지만, zip이 서명과 확장 속성을 확실히 보존합니다.)
+2. zip을 더블클릭해 풀고, `Chaja.app`을 **응용 프로그램** 폴더로 끌어 놓습니다.
+3. Chaja를 엽니다. "Apple이 확인할 수 없음" 경고가 나오면 **완료**를 누른 뒤
+   **시스템 설정 → 개인정보 보호 및 보안** 맨 아래의 **"그래도 열기"** 를 누르고, 다시 나오는 창에서 **열기**를 누릅니다 (맥 암호 입력).
    그래도 열리지 않으면 터미널에서:
    ```bash
    xattr -dr com.apple.quarantine /Applications/Chaja.app
    ```
-3. 숨김 파일이나 보호된 폴더까지 찾으려면
+4. 숨김 파일이나 보호된 폴더까지 찾으려면
    **시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한** 에서 Chaja를 켭니다.
    (Spotlight 인덱스 검색만 쓴다면 없어도 됩니다.)
+
+### 업데이트
+
+새 버전도 같은 방법으로 **응용 프로그램 폴더의 Chaja.app을 바꿔치기**하면 됩니다 (먼저 메뉴 막대의 Chaja → 종료).
+
+- 같은 자체 서명 인증서로 서명했기 때문에 **전체 디스크 접근 권한은 다시 켤 필요가 없습니다.**
+- 다른 맥에서는 새로 받은 파일마다 "그래도 열기"(또는 위 `xattr` 명령)를 한 번 더 해야 합니다.
+- 설정·저장된 검색·이미지 분석 캐시는 앱 밖(`~/Library/Preferences`, `~/Library/Application Support/Chaja`)에 있어 그대로 남습니다.
 
 **요구 사항**: macOS 26 이상, Apple Silicon 맥
 
@@ -125,6 +143,8 @@ open build/DerivedData/Build/Products/Debug/Chaja.app
 ```
 
 - `Chaja.xcodeproj`는 저장소에 넣지 않습니다. 새 Swift 파일을 추가했다면 `xcodegen generate`를 다시 실행하세요.
+- 배포용 빌드는 `scripts/build-release.sh`를 씁니다. 옵션: `--test`(먼저 테스트), `--install`(이 맥에 설치).
+  빌드 번호는 git 커밋 수로 자동으로 매겨지고, 서명 인증서·인증서 고정·arm64 여부를 검사한 뒤 `build/Chaja-<버전>.zip`을 만듭니다.
 - 서명은 키체인의 자체 서명 인증서 **`Chaja Self-Signed`** 를 씁니다. 같은 인증서로 서명하면 다시 빌드해도 전체 디스크 접근 권한이 유지됩니다.
   인증서가 없는 맥에서는 임시 서명으로 빌드할 수 있습니다:
   ```bash
@@ -134,7 +154,7 @@ open build/DerivedData/Build/Products/Debug/Chaja.app
 ### 테스트
 
 ```bash
-xcodebuild test -project Chaja.xcodeproj -scheme Chaja -derivedDataPath build/DerivedData
+xcodebuild test -project Chaja.xcodeproj -scheme Chaja -destination "platform=macOS,arch=arm64" -derivedDataPath build/DerivedData
 ```
 
 Swift Testing 44개: 쿼리 생성, 한글 이름 매칭, 직접 스캔(숨김·패키지·제외·태그·출처), 저장 형식 하위 호환, 검색 기록,
@@ -178,6 +198,6 @@ Chaja/
 - [x] **1단계** — 핵심 검색 (Spotlight + 직접 스캔, 필터, 리스트/그리드, Quick Look)
 - [x] **2단계** — 편의 기능 (전역 단축키, 검색 저장·최근 검색, 제외 폴더, 다운로드 출처, 태그)
 - [x] **3단계** — 분석 기능 (중복 파일 찾기, 비슷한 이미지 찾기, 미리보기 분석 카드)
-- [ ] **4단계** — 배포 (Release 빌드 스크립트, 두 번째 맥 설치 검증)
+- [x] **4단계** — 배포 (Release 빌드 스크립트, 두 번째 맥 설치 검증) — 1.0.1
 
 자세한 계획과 구현 메모는 [`docs/handoff.md`](docs/handoff.md)에 있습니다.

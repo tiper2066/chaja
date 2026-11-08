@@ -12,7 +12,7 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
     SWIFT_APPROACHABLE_CONCURRENCY: YES
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "1.0.1"
     CURRENT_PROJECT_VERSION: "1"
     ARCHS: arm64
     # 자체 서명 인증서에는 Team ID가 없어 Hardened Runtime의 라이브러리 검증에 걸린다. 공증을 안 하므로 끈다.

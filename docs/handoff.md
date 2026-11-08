@@ -35,7 +35,7 @@
 | 1단계 | 핵심 검색 앱 (시안 기능 + Spotlight + 직접 스캔 + Quick Look) | ✅ 완료 (사용자 확인) |
 | 2단계 | 편의 기능 (단축키, 검색 저장, 제외 폴더, 다운로드 출처, 태그) + README | ✅ 완료 (사용자 확인) |
 | 3단계 | 분석 기능 (중복 파일, 비슷한 이미지) | ✅ 완료 (사용자 확인) |
-| 4단계 | 배포 (Release 빌드, M5 맥 설치 검증) | ⬜ 미착수 |
+| 4단계 | 배포 (Release 빌드, M5 맥 설치 검증) | ✅ 완료 (사용자 확인, 1.0.1) |
 
 ---
 
@@ -165,7 +165,7 @@ Chaja/
     ├── Views/
     │   ├── ContentView.swift
     │   ├── Sidebar/    FilterSidebar, SearchField, ExtensionChips, KindChips, SizeRangeSection, DateSection, OptionsSection, LocationSection
-    │   ├── Results/    ResultsTableView, ResultsGridView, ResultsToolbar, EmptyStateView
+        │   ├── Results/    ResultsTable(NSTableView 래핑), ResultsGrid, ResultsView(빈 상태·상태바·우클릭 메뉴)
     │   ├── Inspector/  InspectorView, FileInsightsView(분석 카드)
     │   ├── Analysis/   AnalysisView (분석 창: 중복 목록, 비슷한 이미지 그리드)
     │   ├── StatusBarView.swift
@@ -286,10 +286,10 @@ Chaja/
 - [x] 3-6. 사용자 확인 (분석 창 배치, 체크·휴지통 흐름, 인스펙터 카드, 비슷한 정도 기준) — 수정 요청 없음
 
 ### 4단계 — 배포
-- [ ] 4-1. `scripts/build-release.sh`: Release 빌드 → 자체 인증서 서명 → `codesign --verify` → `Chaja.zip` 생성 (`build/` 폴더)
-- [ ] 4-2. 이 맥(M2)에서 `/Applications`에 설치 후 동작 확인
-- [ ] 4-3. M5 맥에 AirDrop/USB로 복사 → 시스템 설정 > 개인정보 보호 및 보안 > "그래도 열기" → 전체 디스크 접근 권한 허용 → 동작 확인
-- [ ] 4-4. `README.md`의 설치 절차를 실제 배포 결과에 맞게 보완 (업데이트 방법, 빌드 스크립트 사용법 추가)
+- [x] 4-1. `scripts/build-release.sh` (`--test`, `--install`): xcodegen → (테스트) → Release 빌드(`build/ReleaseDerivedData`, 빌드 번호 = `git rev-list --count HEAD`) → `codesign --verify --strict --deep` + 서명자 `Chaja Self-Signed`·인증서 고정(`certificate leaf`)·arm64 검사 → `ditto`로 `build/Chaja-<버전>.zip`(1.4MB). 버전 0.1.0 → **1.0.0**. zip을 풀어도 서명 유지 확인
+- [x] 4-2. 이 맥(M2)에 `--install`로 `/Applications/Chaja.app` 설치·실행 확인. 설치본과 Debug 빌드의 서명 요구사항이 같아(`identifier "com.n22309002.Chaja" and certificate leaf = H"ecf48bc7…2d93"`) 전체 디스크 접근 권한이 그대로 적용됨 — 사용자 확인 완료
+- [x] 4-3. M5 맥에 zip 복사 → "그래도 열기" → 전체 디스크 접근 권한 → 동작 확인 (사용자). 1.0.0에서 결과 리스트 충돌 발견 → 1.0.1에서 `NSTableView`로 고친 뒤 이상 없음 확인
+- [x] 4-4. `README.md` 설치 절차 보완: 빌드한 맥(`--install`) / 다른 맥(zip, 그래도 열기) / 업데이트(바꿔치기, 권한 유지, 데이터 위치) / 빌드 스크립트 사용법
 
 ---
 
@@ -298,7 +298,8 @@ Chaja/
 | 위험 | 대응 |
 |---|---|
 | 넓은 검색에서 결과 수십만 개 → 느림/메모리 | 스트리밍 + 표시 상한 + 조건 좁히기 안내 |
-| SwiftUI `Table`이 대량 행에서 느림 | `NSTableView` 래핑으로 교체 |
+| SwiftUI `Table`이 대량 행에서 느림 | **실제로 발생 → 교체함(1.0.1)**. M5 맥 전체 Mac "gu" 입력 시 5~6초 멈춤 + `TableRowForEachState`에서 배열 범위 초과로 종료. `Views/Results/ResultsTable.swift`를 `NSTableView` 래핑으로 바꾸고 결과 사본을 `resultsVersion`이 바뀔 때만 다시 읽음. **리스트를 다시 SwiftUI `Table`로 바꾸지 말 것** |
+| 다른 맥에서 충돌 | 충돌 보고서(`~/Library/Logs/DiagnosticReports/Chaja-*.ips`)를 받아, `build/dSYMs/Chaja-<버전>-<빌드>.dSYM`(빌드 스크립트가 보관)으로 줄 번호 확인 |
 | 종류(UTType) 매핑이 실제 파일과 다름 | 1단계에서 실제 파일로 검증, 확장자 보조 매칭 |
 | 직접 스캔이 오래 걸림 | 선택한 위치만 순회, 제외 폴더 생략, 진행률·취소 |
 | 빌드 중 "codesign이 키체인 접근 허용" 암호 창이 반복해서 뜸 | CLI로 가져온 키는 접근 허용 목록(partition list)이 비어 있음. 사용자가 터미널에서 1회 실행해 해결함(2026-11-05): `security set-key-partition-list -S apple-tool:,apple:,codesign: -s -l "Chaja Self-Signed" ~/Library/Keychains/login.keychain-db` (로그인 암호 입력). 인증서를 재생성하면 다시 실행 필요 |
@@ -318,6 +319,7 @@ Chaja/
    open build/DerivedData/Build/Products/Debug/Chaja.app
    ```
    새 Swift 파일을 추가하면 `xcodegen generate`를 다시 실행해야 프로젝트에 포함된다
+   배포용은 `scripts/build-release.sh --test --install` (zip은 `build/Chaja-<버전>.zip`). `/Applications`를 바꾸므로 에이전트 실행 시 사용자 승인이 필요하다
 4. 응답은 항상 한국어로
 5. **각 단계가 끝나면 사용자 확인을 받은 뒤 다음 단계로 진행** (사용자 요청)
    - 원격 저장소: https://github.com/tiper2066/chaja (브랜치 `main`). 단계 완료·확인 후 커밋하고 푸시
@@ -336,4 +338,7 @@ Chaja/
 | 2026-11-05 | 2단계 구현(단축키·설정·저장/최근 검색·제외 폴더·출처·태그), 테스트 36개 통과 |
 | 2026-11-05 | 2단계 사용자 확인 완료. README 작성 후 커밋·푸시. 다음은 3단계 |
 | 2026-11-09 | 3단계 구현(중복 파일·비슷한 이미지 엔진, 분석 창, 인스펙터 분석 카드), 테스트 44개 통과. Vision 거리 기준을 시스템 배경화면 사본으로 측정. 사용자 확인 대기 중(확인 후 커밋·푸시) |
-| 2026-11-09 | 3단계 사용자 확인 완료, 커밋·푸시. 4단계 시작 |
+| 2026-11-09 | 3단계 사용자 확인 완료, 커밋·푸시(`030e3f2`). 4단계 시작 |
+| 2026-11-09 | 4단계: `scripts/build-release.sh` 작성, 버전 1.0.0, 이 맥 `/Applications` 설치·실행 확인, README 설치·업데이트 절차 보완. M5 맥 설치는 사용자 확인 대기 |
+| 2026-11-09 | M5 맥에서 1.0.0 충돌(SwiftUI `Table` 내부 배열 범위 초과, 대량 결과 갱신 중) → 결과 리스트를 `NSTableView`로 교체(열 정렬·다중 선택·우클릭·드래그·Space/Return 유지, ‘위치’ 정렬 추가), `FileItem.parentDisplayPath` 미리 계산, 빌드 스크립트가 dSYM 보관. 1.0.1로 이 맥 재설치, M5 재확인 대기 |
+| 2026-11-09 | 1.0.1 두 맥 모두 사용자 확인 완료. **4단계 완료 — 계획한 0~4단계 전체 완료**. 커밋·푸시 |

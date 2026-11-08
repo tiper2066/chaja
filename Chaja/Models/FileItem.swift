@@ -10,6 +10,8 @@ nonisolated struct FileItem: Identifiable, Hashable, Sendable {
     let kindDescription: String
     let isFolder: Bool
     let kind: FileKind?
+    /// 리스트 표시와 위치 정렬에 쓰여 비교할 때마다 다시 만들지 않도록 미리 계산해 둔다.
+    let parentDisplayPath: String
 
     init(url: URL, name: String? = nil, size: Int64?, created: Date?, modified: Date?,
          contentType: String?, kindDescription: String?, isFolder: Bool) {
@@ -22,6 +24,7 @@ nonisolated struct FileItem: Identifiable, Hashable, Sendable {
         self.isFolder = isFolder
         self.kind = FileKind.classify(contentType: contentType, fileExtension: url.pathExtension)
         self.kindDescription = kindDescription ?? (isFolder ? "폴더" : url.pathExtension.uppercased())
+        self.parentDisplayPath = (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
     }
 
     var id: String { url.path }
@@ -29,10 +32,6 @@ nonisolated struct FileItem: Identifiable, Hashable, Sendable {
 
     var displayPath: String {
         (path as NSString).abbreviatingWithTildeInPath
-    }
-
-    var parentDisplayPath: String {
-        (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
     }
 
     // Table 정렬용. 값이 없는 항목은 맨 뒤(오름차순 기준 맨 앞)로 보낸다.

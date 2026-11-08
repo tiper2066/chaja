@@ -8,13 +8,14 @@ final class SearchModel {
     }
 
     enum SortField: String, CaseIterable, Identifiable {
-        case name, size, modified, created, kind
+        case name, location, size, modified, created, kind
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .name: "이름"
+            case .location: "위치"
             case .size: "크기"
             case .modified: "수정일"
             case .created: "생성일"
@@ -37,7 +38,11 @@ final class SearchModel {
     var quickLookURL: URL?
     private(set) var searchFocusRequest = 0
 
-    private(set) var results: [FileItem] = []
+    private(set) var results: [FileItem] = [] {
+        didSet { resultsVersion &+= 1 }
+    }
+    /// 결과 목록이 바뀔 때마다 늘어난다. 리스트는 이 값이 바뀔 때만 다시 읽는다.
+    private(set) var resultsVersion = 0
     private(set) var phase: Phase = .idle
     private(set) var reachedLimit = false
     private(set) var isScanningDisk = false
@@ -242,6 +247,7 @@ final class SearchModel {
     static func comparator(for field: SortField, order: SortOrder) -> KeyPathComparator<FileItem> {
         switch field {
         case .name: KeyPathComparator(\FileItem.name, comparator: .localizedStandard, order: order)
+        case .location: KeyPathComparator(\FileItem.parentDisplayPath, comparator: .localizedStandard, order: order)
         case .size: KeyPathComparator(\FileItem.sortSize, order: order)
         case .modified: KeyPathComparator(\FileItem.sortModified, order: order)
         case .created: KeyPathComparator(\FileItem.sortCreated, order: order)
